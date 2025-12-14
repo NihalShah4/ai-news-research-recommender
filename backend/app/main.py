@@ -1,82 +1,114 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from app.models import TrendsRequest, TrendsResponse, MapRequest, MapResponse, MapPoint, DailyCount
 
-from app.embedder import Embedder
+from app.models import (
+    IngestRequest,
+    IngestResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
+    StatsResponse,
+)
+from app.sources import get_topics, get_topic_by_key
+from app.scraping import ingest_from_feeds
 from app.store import VectorStore
-from app.models import IngestRequest, SearchRequest, Article
-from app.scraping import fetch_rss_articles
-
 
 app = FastAPI(
-    title="AI News & Research Recommendation Engine",
-    version="0.3.0"
+    title="AI News & Research Recommender",
+    version="0.4.1",
 )
 
-# --- CORS so the React app (localhost:5173) can call the API ---
-origins = [
+# Adjust if needed
+ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Core engine setup ---
-embedder = Embedder()
 store = VectorStore()
+
+@app.post("/reset")
+def reset():
+    store.reset()
+    return {"status": "ok", "total_indexed": store.total()}
 
 
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "ok"}
 
 
-@app.post("/ingest")
-def ingest_articles(request: IngestRequest):
-    embeddings = embedder.embed(request.urls)
-
-    for url, emb in zip(request.urls, embeddings):
-        article = Article(title=url, url=url, embedding=emb)
-        store.add(article)
-
-    return {"message": "Articles ingested", "count": len(request.urls)}
+@app.get("/topics")
+def topics():
+    return {"topics": [t.model_dump() for t in get_topics()]}
 
 
-@app.post("/ingest_topic")
-def ingest_topic(topic: str, limit: int = 30):
-    """
-    Ingest live articles for a given topic from RSS feeds.
-    Topics supported: 'ai', 'ml', 'general-tech' (more can be added).
-    """
-    raw_articles = fetch_rss_articles(topic=topic, limit=limit)
-
-    if not raw_articles:
-        return {"message": "No articles found for topic", "topic": topic, "count": 0}
-
-    texts_to_embed = [
-        f"{a['title']} {a.get('summary', '')}" for a in raw_articles
-    ]
-    embeddings = embedder.embed(texts_to_embed)
-
-    for raw, emb in zip(raw_articles, embeddings):
-        article = Article(
-            title=raw["title"],
-            url=raw["url"],
-            summary=raw.get("summary", None),
-            embedding=emb,
-        )
-        store.add(article)
-
-    return {"message": "Topic ingested", "topic": topic, "count": len(raw_articles)}
+@app.get("/stats", response_model=StatsResponse)
+def stats():
+    return StatsResponse(total_indexed=store.total())
 
 
-@app.post("/search")
-def search_articles(request: SearchRequest):
-    query_emb = embedder.embed(request.query)[0]
-    results = store.search(query_emb, top_k=request.top_k)
-    return {"results": results}
+@app.post("/trends", response_model=TrendsResponse)
+def trends(req: TrendsRequest):
+    data = store.trends(days=req.days, top_n=req.top_n, sources=req.sources)
+    # Pydantic will validate/shape it via TrendsResponse
+    return data
+
+
+@app.post("/map", response_model=MapResponse)
+def map_2d(req: MapRequest):
+    data = store.map_2d(k=req.k, query=req.query, days=req.days, sources=req.sources)
+    return {
+        "total_indexed": store.total(),
+        "points": [MapPoint(**p) for p in data["points"]],
+        "query_point": data["query_point"],
+    }
+
+
+@app.post("/ingest", response_model=IngestResponse)
+def ingest(req: IngestRequest):
+    topic = get_topic_by_key(req.topic_key)
+    if not topic:
+        raise HTTPException(status_code=404, detail=f"Unknown topic_key: {req.topic_key}")
+
+    articles = ingest_from_feeds(topic.feeds, per_feed_limit=req.per_feed_limit)
+    added = store.add_many(articles)
+
+    return IngestResponse(added=added, total_indexed=store.total())
+
+
+@app.post("/search", response_model=SearchResponse)
+def search(req: SearchRequest):
+    results = store.search(req.query, k=req.k, days=req.days, sources=req.sources)
+    return SearchResponse(
+        total_indexed=store.total(),
+        results=[SearchResult(**r) for r in results],
+    )
+
+
+
+
+from pathlib import Path
+import os
+from datetime import datetime
+
+@app.get("/persist-info")
+def persist_info():
+    path = Path(os.getenv("VECTORSTORE_PATH", "./data/vectorstore.joblib"))
+    exists = path.exists()
+    mtime = datetime.fromtimestamp(path.stat().st_mtime).isoformat() if exists else None
+
+    return {
+        "path": str(path.resolve()),
+        "exists": exists,
+        "last_modified": mtime,
+        "total_indexed": store.total(),
+    }
