@@ -41,26 +41,7 @@ No external AI APIs are used. All data is fetched from public RSS feeds and proc
 
 ## Project Structure
 
-ai-news-research-recommender/
-│
-├── backend/
-│ ├── app/
-│ │ ├── main.py # FastAPI entry point
-│ │ ├── sources.py # Topic and RSS feed definitions
-│ │ ├── ingest.py # RSS ingestion logic
-│ │ ├── search.py # Search logic
-│ │ └── models.py # Data models
-│ └── requirements.txt
-│
-├── frontend/
-│ ├── src/
-│ │ ├── App.jsx # Main React application
-│ │ ├── App.css # Styling
-│ │ └── main.jsx # React entry point
-│ └── package.json
-│
-└── README.md
-
+<img width="317" height="402" alt="image" src="https://github.com/user-attachments/assets/4ecfabb8-77a0-482b-bbb1-e0b34daf3009" />
 
 ---
 
