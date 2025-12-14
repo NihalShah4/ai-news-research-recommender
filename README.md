@@ -139,14 +139,9 @@ http://localhost:5173
 
 ### API Endpoints (Backend)
 
-- GET /topics
-Returns available topics and their metadata.
-
-- POST /ingest
-Fetches and indexes articles for a given topic.
-
-- POST /search
-Searches indexed articles using a text query.
+- GET /topics : Returns available topics and their metadata.
+- POST /ingest : Fetches and indexes articles for a given topic.
+- POST /search : Searches indexed articles using a text query.
 
 ---
 
