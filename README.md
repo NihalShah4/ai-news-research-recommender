@@ -40,6 +40,7 @@ No external AI APIs are used. All data is fetched from public RSS feeds and proc
 ---
 
 ## Project Structure
+
 ai-news-research-recommender/
 │
 ├── backend/
